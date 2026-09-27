@@ -13,6 +13,7 @@ import { authRoutes } from './routes/auth.js';
 import { kycRoutes } from './routes/kyc.js';
 import { matchRoutes } from './routes/matches.js';
 import { metaRoutes } from './routes/meta.js';
+import { opsRoutes } from './routes/ops.js';
 import { requestRoutes } from './routes/requests.js';
 import { tripRoutes } from './routes/trips.js';
 import { uploadRoutes } from './routes/uploads.js';
@@ -90,6 +91,7 @@ export async function buildApp(opts: BuildOptions = {}): Promise<FastifyInstance
       await v1.register(requestRoutes);
       await v1.register(matchRoutes, { payments });
       await v1.register(adminRoutes, { payments });
+      await v1.register(opsRoutes, { payments });
     },
     { prefix: '/api/v1' },
   );

@@ -23,10 +23,29 @@ npm workspaces monorepo:
 |---|---|---|
 | `apps/api` | REST API, `/api/v1` on port 4000 | Fastify 5 + TypeScript, Node built-in SQLite (`node:sqlite`), Zod validation, `@fastify/helmet`, `@fastify/cors`, `@fastify/rate-limit`, `@fastify/cookie` |
 | `apps/web` | Web client on port 5173 | React 18 + Vite + React Router; dev server proxies `/api` to the API |
+| `apps/ops` | AI operations team (Claude agents) that files proposals for the admin to approve | TypeScript + Anthropic SDK; talks to the API as the `ops` role |
 | `docs/` | Product, security, workflow, business and go-to-market documentation | Markdown + Mermaid |
 
 The API contract is fixed in [docs/API.md](docs/API.md). Payments, ID verification, trip verification,
 file storage and email are **mocked** behind interfaces (see [docs/SECURITY.md](docs/SECURITY.md#6-what-is-mocked-in-the-mvp-and-must-be-replaced-before-launch)).
+
+## AI operations team
+
+`apps/ops` runs five Claude-powered agents (`identity-reviewer`, `dispute-officer`, `trust-safety`,
+`growth`, `chief-of-staff`) that log into the API as a service account with role `ops`. They read the
+KYC queue, disputes, audit log and stats, and file **proposals** that the founder approves or rejects in
+the **AI Team** tab of the admin console. The `ops` role can read admin data and propose; it cannot
+approve KYC, resolve disputes or suspend users itself. Execution happens inside the API on admin
+approval, or under a narrow server-side auto-policy (confident KYC rejections, disputes up to $50) that
+can be switched off with `OPS_AUTO_EXECUTE=false`. Seed login: `ops@carrylink.dev` / `Ops-Passw0rd!`.
+
+```bash
+OPS_DRY_RUN=true npm run ops -w apps/ops -- run   # print what the team would propose, file nothing
+npm run ops -w apps/ops -- daemon                 # run every 30 minutes, daily digest at 08:00
+```
+
+Setup, the daily approval routine, autonomy settings, costs and limits:
+[docs/OPERATIONS.md](docs/OPERATIONS.md). API contract: [docs/API.md](docs/API.md#ai-operations-team-ops).
 
 ## Quick start
 
@@ -80,6 +99,7 @@ npm run typecheck
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Mermaid diagrams: onboarding/KYC, match lifecycle, escrow and codes, disputes, companion assist; step lists per persona |
 | [docs/BUSINESS_MODEL.md](docs/BUSINESS_MODEL.md) | Business Model Canvas, revenue, unit economics, CAC, break-even, metrics, risks |
 | [docs/GO_TO_MARKET.md](docs/GO_TO_MARKET.md) | Launch corridor, WhatsApp seeding, ambassadors, 90-day plan, validation survey and interview guide |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Founder's guide to the AI operations team: what each agent does, daily approvals, setup, autonomy settings, costs, guardrails |
 
 ## Security status
 

@@ -21,6 +21,9 @@ const TONE: Record<string, string> = {
   split: 'neutral',
   disputed: 'danger',
   rejected: 'danger',
+  approved: 'success',
+  auto_executed: 'accent',
+  failed: 'danger',
 };
 
 export function StatusPill({ status }: { status: string }) {

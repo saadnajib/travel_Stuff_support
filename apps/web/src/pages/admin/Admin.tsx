@@ -1,10 +1,12 @@
 import { useSearchParams } from 'react-router-dom';
+import { AiTeamTab } from './AiTeamTab';
 import { AuditTab } from './AuditTab';
 import { DisputesTab } from './DisputesTab';
 import { KycTab } from './KycTab';
 import { UsersTab } from './UsersTab';
 
 const TABS = [
+  { key: 'ai', label: 'AI Team' },
   { key: 'kyc', label: 'KYC queue' },
   { key: 'disputes', label: 'Disputes' },
   { key: 'users', label: 'Users' },
@@ -15,7 +17,7 @@ type TabKey = (typeof TABS)[number]['key'];
 export function AdminPage() {
   const [params, setParams] = useSearchParams();
   const raw = params.get('tab');
-  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'kyc';
+  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'ai';
 
   return (
     <div className="page">
@@ -37,6 +39,7 @@ export function AdminPage() {
         ))}
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'ai' && <AiTeamTab />}
         {tab === 'kyc' && <KycTab />}
         {tab === 'disputes' && <DisputesTab />}
         {tab === 'users' && <UsersTab />}

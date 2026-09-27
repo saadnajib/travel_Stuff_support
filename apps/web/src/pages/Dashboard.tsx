@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom';
-import { getKycStatus, getMatches, getMyRequests, getMyTrips } from '../api/endpoints';
+import { getKycStatus, getMatches, getMyRequests, getMyTrips, opsGetProposals } from '../api/endpoints';
 import type { Match, MatchStatus } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { VerificationBanners } from '../components/Banners';
 import { KycBadge } from '../components/KycBadge';
 import { EmptyState, ErrorState, Loading } from '../components/Loading';
 import { StatusPill } from '../components/StatusPill';
-import { formatDate, formatMoney, humanize } from '../lib/format';
+import { formatDate, formatMoney, humanize, pluralize } from '../lib/format';
 import { useAsync } from '../lib/useAsync';
 
 export const MATCH_STATUS_ORDER: MatchStatus[] = [
@@ -34,6 +34,9 @@ export function DashboardPage() {
   const trips = useAsync(getMyTrips, []);
   const requests = useAsync(getMyRequests, []);
   const matches = useAsync(getMatches, []);
+  const isAdmin = user?.role === 'admin';
+  // Errors are ignored on purpose: the card simply does not render if /ops is unavailable.
+  const opsPending = useAsync(() => opsGetProposals({ status: 'pending' }), [isAdmin], isAdmin);
 
   if (!user) return null;
   const groups = groupMatches(matches.data ?? []);
@@ -59,6 +62,15 @@ export function DashboardPage() {
         <div className="alert alert-error">Your account is suspended. Contact support for help.</div>
       )}
       <VerificationBanners user={user} />
+
+      {isAdmin && opsPending.data && (
+        <Link to="/admin" className="card ops-callout">
+          <span>
+            <strong>AI Team:</strong> {pluralize(opsPending.data.length, 'approval')} waiting
+          </span>
+          <span className="small">Review →</span>
+        </Link>
+      )}
 
       <div className="grid grid-4 stats">
         <div className="card stat-card">

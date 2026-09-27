@@ -52,6 +52,11 @@ export const config = {
   refreshTokenTtlSec: 30 * 24 * 60 * 60,
   emailTokenTtlSec: 24 * 60 * 60,
   disputeWindowHours: 48,
+  ops: {
+    autoExecute: process.env.OPS_AUTO_EXECUTE !== 'false',
+    autoDisputeMaxMinor: Number(process.env.OPS_AUTO_DISPUTE_MAX_MINOR ?? 5000),
+    autoMinConfidence: Number(process.env.OPS_AUTO_MIN_CONFIDENCE ?? 0.9),
+  },
   codeMaxAttempts: 5,
   version: '0.1.0',
 } as const;

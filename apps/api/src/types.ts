@@ -4,7 +4,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'ops';
   emailVerified: boolean;
   kycStatus: 'none' | 'pending' | 'verified' | 'rejected';
   suspended: boolean;

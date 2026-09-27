@@ -4,6 +4,7 @@ import { encryptField, hashPassword, hmacHex, last4 } from './lib/crypto.js';
 
 export interface SeedResult {
   admin: { id: string; email: string; password: string };
+  ops: { id: string; email: string; password: string };
   traveler: { id: string; email: string; password: string; tripId: string };
   sender: { id: string; email: string; password: string; requestId: string };
 }
@@ -14,7 +15,7 @@ function plusDays(n: number): string {
 
 export async function seed(db: Db): Promise<SeedResult> {
   const now = nowIso();
-  const mk = async (email: string, password: string, name: string, role: 'user' | 'admin', kyc: 'none' | 'verified') => {
+  const mk = async (email: string, password: string, name: string, role: 'user' | 'admin' | 'ops', kyc: 'none' | 'verified') => {
     const existing = db.get(`SELECT id FROM users WHERE email = ?`, [email]);
     if (existing) return existing.id as string;
     const id = randomUUID();
@@ -36,10 +37,12 @@ export async function seed(db: Db): Promise<SeedResult> {
   };
 
   const admin = { email: 'admin@carrylink.dev', password: 'Admin-Passw0rd!' };
+  const ops = { email: 'ops@carrylink.dev', password: process.env.OPS_PASSWORD ?? 'Ops-Passw0rd!' };
   const traveler = { email: 'traveler@carrylink.dev', password: 'Traveler-Passw0rd!' };
   const sender = { email: 'sender@carrylink.dev', password: 'Sender-Passw0rd!' };
 
   const adminId = await mk(admin.email, admin.password, 'CarryLink Admin', 'admin', 'none');
+  const opsId = await mk(ops.email, ops.password, 'CarryLink AI Team', 'ops', 'none');
   const travelerId = await mk(traveler.email, traveler.password, 'Ayesha Traveller', 'user', 'verified');
   const senderId = await mk(sender.email, sender.password, 'Bilal Sender', 'user', 'verified');
 
@@ -71,6 +74,7 @@ export async function seed(db: Db): Promise<SeedResult> {
 
   return {
     admin: { id: adminId, ...admin },
+    ops: { id: opsId, ...ops },
     traveler: { id: travelerId, ...traveler, tripId },
     sender: { id: senderId, ...sender, requestId },
   };

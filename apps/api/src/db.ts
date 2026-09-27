@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','ops')),
   email_verified INTEGER NOT NULL DEFAULT 0,
   kyc_status TEXT NOT NULL DEFAULT 'none' CHECK (kyc_status IN ('none','pending','verified','rejected')),
   phone_enc TEXT,
@@ -269,10 +269,80 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+
+CREATE TABLE IF NOT EXISTS ops_proposals (
+  id TEXT PRIMARY KEY,
+  agent TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('kyc_decision','dispute_resolution','user_suspension','outreach_draft','report')),
+  target_id TEXT,
+  title TEXT NOT NULL,
+  reasoning TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  risk TEXT NOT NULL CHECK (risk IN ('low','medium','high')),
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','auto_executed','failed')),
+  auto_policy TEXT,
+  proposed_by TEXT REFERENCES users(id),
+  decided_by TEXT,
+  decided_at TEXT,
+  decision_note TEXT,
+  execution_result TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ops_status ON ops_proposals(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_ops_target ON ops_proposals(kind, target_id);
 `;
 
+/** Bump when SCHEMA changes in a way existing databases must be migrated to. */
+export const SCHEMA_VERSION = 2;
+
+const MIGRATIONS: Record<number, (db: Db) => void> = {
+  // v1 -> v2: users.role gains 'ops'. SQLite cannot alter a CHECK constraint, so rebuild the table.
+  2: (db) => {
+    db.exec(`
+      CREATE TABLE users_v2 (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','ops')),
+        email_verified INTEGER NOT NULL DEFAULT 0,
+        kyc_status TEXT NOT NULL DEFAULT 'none' CHECK (kyc_status IN ('none','pending','verified','rejected')),
+        phone_enc TEXT,
+        phone_last4 TEXT,
+        trust_score INTEGER NOT NULL DEFAULT 50,
+        suspended INTEGER NOT NULL DEFAULT 0,
+        suspended_reason TEXT,
+        failed_logins INTEGER NOT NULL DEFAULT 0,
+        locked_until TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO users_v2 SELECT id, email, password_hash, name, role, email_verified, kyc_status, phone_enc, phone_last4,
+        trust_score, suspended, suspended_reason, failed_logins, locked_until, created_at, updated_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_v2 RENAME TO users;
+    `);
+  },
+};
+
 export function migrate(db: Db): void {
-  db.exec(SCHEMA);
+  const hadUsers = !!db.get(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'`);
+  const current = Number(db.get<{ user_version: number }>('PRAGMA user_version')?.user_version ?? 0);
+  if (!hadUsers) {
+    db.exec(SCHEMA);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    return;
+  }
+  const from = current === 0 ? 1 : current;
+  db.exec('PRAGMA foreign_keys = OFF;');
+  for (let v = from + 1; v <= SCHEMA_VERSION; v++) {
+    const step = MIGRATIONS[v];
+    if (step) db.transaction(() => step(db));
+  }
+  db.exec('PRAGMA foreign_keys = ON;');
+  db.exec(SCHEMA); // creates any new tables/indexes
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
 
 export function nowIso(): string {

@@ -156,7 +156,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     setRefreshCookie(reply, refresh);
     audit(app.db, { actorId: row.id as string, action: 'auth.login', entity: 'user', entityId: row.id as string, ip: req.ip });
     return {
-      accessToken: signJwt({ sub: row.id as string, role: row.role as 'user' | 'admin' }, config.accessTokenTtlSec),
+      accessToken: signJwt({ sub: row.id as string, role: row.role as 'user' | 'admin' | 'ops' }, config.accessTokenTtlSec),
       user: fullUser(app, row.id as string),
     };
   });
@@ -188,7 +188,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
     setRefreshCookie(reply, next);
     return {
-      accessToken: signJwt({ sub: user.id as string, role: user.role as 'user' | 'admin' }, config.accessTokenTtlSec),
+      accessToken: signJwt({ sub: user.id as string, role: user.role as 'user' | 'admin' | 'ops' }, config.accessTokenTtlSec),
       user: fullUser(app, user.id as string),
     };
   });

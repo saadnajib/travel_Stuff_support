@@ -87,7 +87,7 @@ export function maskPhone(last: string | null): string | null {
 // ---- minimal HS256 JWT ----
 export interface AccessClaims {
   sub: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'ops';
   iat: number;
   exp: number;
   typ: 'access';

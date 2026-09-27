@@ -30,6 +30,23 @@ an airport, money laundered through small "rewards". The threat model therefore 
 - **Recipient** → not a platform user; only ever holds the delivery code.
 - **Third-party providers** (payments, IDV, flight data, storage, email/SMS) → all mocked in the MVP.
 
+### AI operations team boundary
+
+The AI operations team (`apps/ops`, see [OPERATIONS.md](./OPERATIONS.md)) authenticates as a service
+account with role `ops`. That role **can** read everything the admin console reads (`GET /admin/*`, `GET /ops/*`:
+KYC queue, disputes with full match context and chat, users, audit log, stats) and **create proposals**
+(`POST /ops/proposals`, at most one pending or executed proposal per kind and target). It **cannot** call any
+`POST /admin/*` action, cannot decide proposals (`POST /ops/proposals/:id/decide` is admin-only, so it can never
+approve its own), and never sees full document or phone numbers. Actions are carried out only inside the API, on
+admin approval or under the server-side auto-policy (KYC rejections and disputes with escrow ≤
+`OPS_AUTO_DISPUTE_MAX_MINOR`, at confidence ≥ `OPS_AUTO_MIN_CONFIDENCE` and risk `low`; KYC approvals and
+suspensions always need an admin; `OPS_AUTO_EXECUTE=false` disables it), and each execution is audited with
+`via: proposal:<id>`. Residual risks: the auto-policy trusts the confidence and risk the agent reports, so the ops
+credentials must be protected like an admin secret (the seed password is for development only); chat content read
+by the `dispute-officer` can attempt prompt injection, which is why larger disputes wait for a human; and the data
+the agents read (names, dates of birth, last 4 digits, chat, history) is sent to the Anthropic API, which must be
+covered by a data processing agreement, the privacy notice and the DPIA (section 7).
+
 ## 3. Controls implemented in the codebase
 
 | Area | Control | Where / config |
@@ -44,7 +61,7 @@ an airport, money laundered through small "rewards". The threat model therefore 
 | CORS | Strict allow-list: a single origin from `CORS_ORIGIN`, credentials enabled only for it | `.env` → `CORS_ORIGIN` |
 | Input validation | **Zod schema on every route input** (body, params, query); unknown or malformed input → `400 VALIDATION_ERROR` | every route |
 | Field encryption | **AES-256-GCM** field-level encryption for user phone numbers, recipient phone numbers and ID document numbers; only the **last 4 digits** are ever returned (`phoneMasked`, admin KYC view) | `.env` → `FIELD_ENCRYPTION_KEY` (32 bytes, base64) |
-| Authorization | RBAC (`user` / `admin`) plus per-resource ownership / match-party checks on every route; `403 FORBIDDEN` | route guards |
+| Authorization | RBAC (`user` / `admin` / `ops`, where `ops` is the AI-team service role: admin reads and proposals only, never executions) plus per-resource ownership / match-party checks on every route; `403 FORBIDDEN` | route guards |
 | Verification gating | Posting trips/requests and creating matches require verified email (`EMAIL_NOT_VERIFIED`) and **KYC `verified`** (`KYC_REQUIRED`); both match parties must be verified; only `verified` trips can be matched | `POST /trips`, `POST /requests`, `POST /matches` |
 | Goods screening | Prohibited-keyword screening of title, description and item names at posting (`422 PROHIBITED_ITEM` with `details.matched`); per-category **weight and declared-value caps**; mandatory sender attestations `items_unsealed`, `no_prohibited`, `truthful_declaration`, `accept_inspection` (+ `has_prescription` for `medicine_rx`) | `POST /requests`, `GET /meta/prohibited`, `GET /meta/categories` |
 | Inspection evidence | Handover requires inspection notes and ≥ 1 photo reference; stored on the match | `POST /matches/:id/handover` |

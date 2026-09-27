@@ -63,3 +63,25 @@ test('prohibited keyword screening matches whole words only', () => {
 test('fee computation', () => {
   assert.deepEqual(computeFees(4000), { platformFeeMinor: 600, protectionFeeMinor: 100, totalChargeMinor: 4700 });
 });
+
+test('schema migration upgrades a v1 database in place and keeps its data', async () => {
+  const { Db, migrate, SCHEMA_VERSION } = await import('../src/db.js');
+  const db = new Db(':memory:');
+  // A v1 database: users table with the old role CHECK and no ops_proposals table.
+  db.exec(`CREATE TABLE users (
+    id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')), email_verified INTEGER NOT NULL DEFAULT 0,
+    kyc_status TEXT NOT NULL DEFAULT 'none', phone_enc TEXT, phone_last4 TEXT, trust_score INTEGER NOT NULL DEFAULT 50,
+    suspended INTEGER NOT NULL DEFAULT 0, suspended_reason TEXT, failed_logins INTEGER NOT NULL DEFAULT 0, locked_until TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  db.run(`INSERT INTO users (id, email, password_hash, name, role, created_at, updated_at) VALUES ('u1','a@b.c','x','A','admin','t','t')`);
+  assert.throws(() => db.run(`INSERT INTO users (id, email, password_hash, name, role, created_at, updated_at) VALUES ('u2','o@b.c','x','O','ops','t','t')`));
+  migrate(db);
+  assert.equal(db.get<{ user_version: number }>('PRAGMA user_version')!.user_version, SCHEMA_VERSION);
+  assert.equal(db.get(`SELECT role FROM users WHERE id = 'u1'`)!.role, 'admin');
+  db.run(`INSERT INTO users (id, email, password_hash, name, role, created_at, updated_at) VALUES ('u2','o@b.c','x','O','ops','t','t')`);
+  assert.ok(db.get(`SELECT name FROM sqlite_master WHERE name = 'ops_proposals'`));
+  migrate(db); // idempotent
+  assert.equal(db.get<{ c: number }>(`SELECT COUNT(*) c FROM users`)!.c, 2);
+  db.close();
+});

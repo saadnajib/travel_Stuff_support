@@ -1,6 +1,7 @@
 // Types mirroring docs/API.md (CarryLink API contract v1).
 
-export type Role = 'user' | 'admin';
+/** `ops` is the AI operations team account: reads admin data, proposes actions. Treated as a normal user in the UI. */
+export type Role = 'user' | 'admin' | 'ops';
 export type KycStatus = 'none' | 'pending' | 'verified' | 'rejected';
 export type DocType = 'passport' | 'national_id' | 'driving_licence';
 export type Category =
@@ -437,6 +438,151 @@ export interface AuditEntry {
   meta: unknown;
   ip: string | null;
   createdAt: IsoDate;
+}
+
+// ---- AI operations team (/ops) ----
+
+export type ProposalKind = 'kyc_decision' | 'dispute_resolution' | 'user_suspension' | 'outreach_draft' | 'report';
+export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'auto_executed' | 'failed';
+export type ProposalRisk = 'low' | 'medium' | 'high';
+
+export interface KycDecisionPayload {
+  submissionId: string;
+  decision: 'approve' | 'reject';
+  reason?: string;
+  /** The applicant's user id, included by the identity-reviewer agent for the context link. */
+  userId?: string;
+  user?: string | { id: string; name?: string };
+}
+
+export interface DisputeResolutionPayload {
+  disputeId: string;
+  resolution: DisputeResolution;
+  notes: string;
+  /** Not in the contract's payload list; honoured when an agent includes the disputed match. */
+  matchId?: string;
+}
+
+export interface UserSuspensionPayload {
+  userId: string;
+  suspended: boolean;
+  reason: string;
+}
+
+export interface OutreachDraftPayload {
+  channel: 'whatsapp' | 'email' | 'other';
+  audience: string;
+  text: string;
+}
+
+export interface ReportPayload {
+  period: string;
+  markdown: string;
+}
+
+interface ProposalBase {
+  id: string;
+  agent: string;
+  targetId: string | null;
+  title: string;
+  reasoning: string;
+  /** 0..1 */
+  confidence: number;
+  risk: ProposalRisk;
+  status: ProposalStatus;
+  /** Why it was auto-executed, if it was. */
+  autoPolicy: string | null;
+  decidedBy: string | null;
+  decidedAt: IsoDate | null;
+  decisionNote: string | null;
+  executionResult: Record<string, unknown> | null;
+  createdAt: IsoDate;
+}
+
+/** Discriminated on `kind`, so narrowing `kind` also narrows `payload`. */
+export type Proposal =
+  | (ProposalBase & { kind: 'kyc_decision'; payload: KycDecisionPayload })
+  | (ProposalBase & { kind: 'dispute_resolution'; payload: DisputeResolutionPayload })
+  | (ProposalBase & { kind: 'user_suspension'; payload: UserSuspensionPayload })
+  | (ProposalBase & { kind: 'outreach_draft'; payload: OutreachDraftPayload })
+  | (ProposalBase & { kind: 'report'; payload: ReportPayload });
+
+type ProposalInputOf<P> = P extends Proposal
+  ? Pick<P, 'agent' | 'kind' | 'title' | 'reasoning' | 'confidence' | 'risk' | 'payload'> & { targetId?: string }
+  : never;
+export type CreateProposalInput = ProposalInputOf<Proposal>;
+
+export interface ProposalListParams {
+  status?: ProposalStatus | 'all';
+  kind?: ProposalKind;
+  limit?: number;
+}
+
+export interface ProposalDecisionInput {
+  decision: 'approve' | 'reject';
+  note?: string;
+}
+
+export interface OpsStats {
+  users: { total: number; verified: number; pendingKyc: number; suspended: number };
+  trips: { published: number; verified: number };
+  requests: {
+    open: number;
+    matched: number;
+    inTransit: number;
+    delivered: number;
+    completed: number;
+    disputed: number;
+    cancelled: number;
+  };
+  matches: { byStatus: Record<MatchStatus, number> };
+  escrow: { heldMinor: number; releasedMinor: number; refundedMinor: number };
+  disputes: { open: number; resolved: number };
+  last7d: {
+    newUsers: number;
+    newRequests: number;
+    newTrips: number;
+    matchesProposed: number;
+    matchesCompleted: number;
+    disputesOpened: number;
+    redactedMessages: number;
+    codeFailures: number;
+  };
+  proposals: { pending: number; autoExecuted7d: number };
+}
+
+export interface UserKycContext {
+  status: KycStatus;
+  docType: DocType;
+  country: string;
+  fullName: string;
+  submittedAt: IsoDate;
+}
+
+export interface UserContextCounts {
+  trips: number;
+  requests: number;
+  matchesCompleted: number;
+  matchesDisputed: number;
+  disputesOpenedByUser: number;
+  disputesLostByUser: number;
+  redactedMessages30d: number;
+  codeFailures30d: number;
+}
+
+export interface UserContext {
+  user: User;
+  kyc: UserKycContext | null;
+  counts: UserContextCounts;
+  recentAudit: AuditEntry[];
+}
+
+export interface MatchContext {
+  match: Match;
+  messages: Message[];
+  disputes: Dispute[];
+  sender: UserContext;
+  traveler: UserContext;
 }
 
 // ---- Errors ----

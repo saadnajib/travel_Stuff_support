@@ -73,7 +73,7 @@ What this tells us:
 |---|---|---|
 | Payment processing and payouts | Variable | Largest variable cost. Negotiate marketplace pricing once volume exists. |
 | IDV checks | Variable per new user | Paid whether or not the user ever transacts; drives activation focus. |
-| Support and disputes | Semi-variable | Human review of disputes is non-negotiable; routine questions should be deflected by product. |
+| Support and disputes | Semi-variable | Disputes above the auto-policy threshold (default $50) always get human review; the AI dispute officer drafts every case and settles only small, clear-cut ones (see OPERATIONS.md). Routine questions should be deflected by product. |
 | Insurance / loss reserve | Variable | Funded by the protection fee. |
 | Engineering and product | Fixed | Founding team. |
 | Legal and compliance | Fixed + per corridor | Customs and medicine rules per country; terms; privacy; payments structuring. |

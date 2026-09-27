@@ -1,20 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { nowIso } from '../db.js';
+import { kycDecision, resolveDispute, suspendUser } from '../domain/adminActions.js';
 import type { PaymentProvider } from '../domain/payments.js';
-import { audit } from '../lib/audit.js';
-import { errors } from '../lib/errors.js';
 import { publicUser, serializeDispute, serializeMatch, serializeUser, userRatings } from '../lib/serialize.js';
 import { parse } from '../lib/validate.js';
-import { assertUser, requireAdmin } from '../plugins/auth.js';
-import { bumpTrust, setMatchStatus } from './matches.js';
+import { assertUser, requireAdmin, requireStaff } from '../plugins/auth.js';
 
 const kycDecisionSchema = z.object({ decision: z.enum(['approve', 'reject']), reason: z.string().trim().max(500).optional() });
 const resolveSchema = z.object({ resolution: z.enum(['refund_sender', 'pay_traveler', 'split']), notes: z.string().trim().min(5).max(3000) });
 const suspendSchema = z.object({ suspended: z.boolean(), reason: z.string().trim().min(3).max(500) });
 
 export async function adminRoutes(app: FastifyInstance, opts: { payments: PaymentProvider }): Promise<void> {
-  app.addHook('preHandler', requireAdmin);
+  // Reads are open to the AI operations role; every write stays admin-only.
+  app.addHook('preHandler', async (req, reply) => {
+    if (req.method === 'GET') await requireStaff(req, reply);
+    else await requireAdmin(req, reply);
+  });
 
   app.get('/admin/kyc/pending', async () => {
     const rows = app.db.all(`SELECT * FROM kyc_submissions WHERE status = 'pending' ORDER BY submitted_at ASC LIMIT 200`);
@@ -37,16 +38,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { payments: Paymen
     const admin = assertUser(req);
     const { id } = req.params as { id: string };
     const body = parse(kycDecisionSchema, req.body);
-    const sub = app.db.get(`SELECT * FROM kyc_submissions WHERE id = ?`, [id]);
-    if (!sub) throw errors.notFound('KYC submission');
-    if (sub.status !== 'pending') throw errors.invalidState('This submission was already reviewed');
-    if (body.decision === 'reject' && !body.reason) throw errors.validation([{ path: 'reason', message: 'A reason is required when rejecting' }]);
-    const status = body.decision === 'approve' ? 'verified' : 'rejected';
-    app.db.transaction(() => {
-      app.db.run(`UPDATE kyc_submissions SET status = ?, rejection_reason = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?`, [status, body.reason ?? null, admin.id, nowIso(), id]);
-      app.db.run(`UPDATE users SET kyc_status = ?, updated_at = ? WHERE id = ?`, [status, nowIso(), sub.user_id as string]);
-    });
-    audit(app.db, { actorId: admin.id, action: `kyc.${body.decision}`, entity: 'kyc', entityId: id, meta: { userId: sub.user_id, reason: body.reason }, ip: req.ip });
+    kycDecision({ db: app.db, payments: opts.payments, actorId: admin.id, ip: req.ip }, id, body.decision, body.reason);
     return { ok: true };
   });
 
@@ -65,42 +57,10 @@ export async function adminRoutes(app: FastifyInstance, opts: { payments: Paymen
     const admin = assertUser(req);
     const { id } = req.params as { id: string };
     const body = parse(resolveSchema, req.body);
-    const dispute = app.db.get(`SELECT * FROM disputes WHERE id = ?`, [id]);
-    if (!dispute) throw errors.notFound('Dispute');
-    if (dispute.status !== 'open') throw errors.invalidState('Dispute already resolved');
-    const match = app.db.get(`SELECT * FROM matches WHERE id = ?`, [dispute.match_id as string])!;
-    const escrow = app.db.get(`SELECT * FROM escrows WHERE match_id = ?`, [match.id as string]);
-
-    let escrowStatus: 'refunded' | 'released' | 'split' | null = null;
-    if (escrow && escrow.status === 'held') {
-      const amount = escrow.amount_minor as number;
-      if (body.resolution === 'refund_sender') {
-        await opts.payments.refund(escrow.provider_ref as string, amount + (escrow.fee_minor as number));
-        escrowStatus = 'refunded';
-      } else if (body.resolution === 'pay_traveler') {
-        await opts.payments.release(escrow.provider_ref as string, match.traveler_id as string, amount);
-        escrowStatus = 'released';
-      } else {
-        const half = Math.floor(amount / 2);
-        await opts.payments.release(escrow.provider_ref as string, match.traveler_id as string, half);
-        await opts.payments.refund(escrow.provider_ref as string, amount - half);
-        escrowStatus = 'split';
-      }
-    }
-
-    app.db.transaction(() => {
-      app.db.run(`UPDATE disputes SET status = 'resolved', resolution = ?, admin_notes = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`, [body.resolution, body.notes, admin.id, nowIso(), id]);
-      if (escrowStatus && escrow) app.db.run(`UPDATE escrows SET status = ?, released_at = ? WHERE id = ?`, [escrowStatus, nowIso(), escrow.id as string]);
-      setMatchStatus(app.db, match.id as string, 'resolved', admin.id);
-      const requestStatus = body.resolution === 'refund_sender' ? 'cancelled' : 'completed';
-      app.db.run(`UPDATE requests SET status = ?, updated_at = ? WHERE id = ?`, [requestStatus, nowIso(), match.request_id as string]);
-      if (body.resolution === 'refund_sender') bumpTrust(app.db, match.traveler_id as string, -10);
-      if (body.resolution === 'pay_traveler') bumpTrust(app.db, match.sender_id as string, -10);
-    });
-    audit(app.db, { actorId: admin.id, action: 'dispute.resolve', entity: 'dispute', entityId: id, meta: { resolution: body.resolution, escrowStatus }, ip: req.ip });
+    const { matchId } = await resolveDispute({ db: app.db, payments: opts.payments, actorId: admin.id, ip: req.ip }, id, body.resolution, body.notes);
     return {
       dispute: serializeDispute(app.db.get(`SELECT * FROM disputes WHERE id = ?`, [id])!),
-      match: serializeMatch(app.db, app.db.get(`SELECT * FROM matches WHERE id = ?`, [match.id as string])!),
+      match: serializeMatch(app.db, app.db.get(`SELECT * FROM matches WHERE id = ?`, [matchId])!),
     };
   });
 
@@ -116,14 +76,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { payments: Paymen
     const admin = assertUser(req);
     const { id } = req.params as { id: string };
     const body = parse(suspendSchema, req.body);
-    const user = app.db.get(`SELECT * FROM users WHERE id = ?`, [id]);
-    if (!user) throw errors.notFound('User');
-    if (user.id === admin.id) throw errors.conflict('You cannot suspend yourself');
-    app.db.transaction(() => {
-      app.db.run(`UPDATE users SET suspended = ?, suspended_reason = ?, updated_at = ? WHERE id = ?`, [body.suspended ? 1 : 0, body.suspended ? body.reason : null, nowIso(), id]);
-      if (body.suspended) app.db.run(`UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?`, [id]);
-    });
-    audit(app.db, { actorId: admin.id, action: body.suspended ? 'user.suspend' : 'user.unsuspend', entity: 'user', entityId: id, meta: { reason: body.reason }, ip: req.ip });
+    suspendUser({ db: app.db, payments: opts.payments, actorId: admin.id, ip: req.ip }, id, body.suspended, body.reason);
     return { user: serializeUser(app.db.get(`SELECT * FROM users WHERE id = ?`, [id])!, userRatings(app.db, id)) };
   });
 
@@ -132,17 +85,19 @@ export async function adminRoutes(app: FastifyInstance, opts: { payments: Paymen
     const rows = before
       ? app.db.all(`SELECT * FROM audit_log WHERE created_at < ? ORDER BY id DESC LIMIT ?`, [before, limit])
       : app.db.all(`SELECT * FROM audit_log ORDER BY id DESC LIMIT ?`, [limit]);
-    return {
-      entries: rows.map((r) => ({
-        id: r.id,
-        actorId: r.actor_id,
-        action: r.action,
-        entity: r.entity,
-        entityId: r.entity_id,
-        meta: r.meta ? JSON.parse(r.meta as string) : null,
-        ip: r.ip,
-        createdAt: r.created_at,
-      })),
-    };
+    return { entries: rows.map(serializeAudit) };
   });
+}
+
+export function serializeAudit(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    actorId: r.actor_id,
+    action: r.action,
+    entity: r.entity,
+    entityId: r.entity_id,
+    meta: r.meta ? JSON.parse(r.meta as string) : null,
+    ip: r.ip,
+    createdAt: r.created_at,
+  };
 }

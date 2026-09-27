@@ -122,3 +122,49 @@ Escrow: held at `funded`, stays held through `delivered`, released at `completed
 ## Dev seed
 
 `npm run seed -w apps/api` creates: admin `admin@carrylink.dev` / `Admin-Passw0rd!`, traveler `traveler@carrylink.dev` / `Traveler-Passw0rd!` (KYC verified, one verified trip LHR->ISB), sender `sender@carrylink.dev` / `Sender-Passw0rd!` (KYC verified, one open documents request LHR->ISB).
+
+## AI operations team (`/ops`)
+
+CarryLink ships an AI operations team (`apps/ops`) that works through the API under a dedicated `ops` role. An `ops`
+account can **read** admin data and **propose** actions; it can never approve KYC, resolve a dispute or suspend a user
+directly. Execution only happens (a) when an `admin` approves a proposal, or (b) when the server-side auto-policy allows it.
+
+- `Role` gains `ops`. All `GET /admin/*` endpoints accept `admin` or `ops`. All `POST /admin/*` endpoints remain `admin` only.
+
+### Objects
+
+```ts
+ProposalKind: 'kyc_decision' | 'dispute_resolution' | 'user_suspension' | 'outreach_draft' | 'report'
+ProposalStatus: 'pending' | 'approved' | 'rejected' | 'auto_executed' | 'failed'
+Proposal {
+  id, agent: string, kind: ProposalKind, targetId: string|null, title: string, reasoning: string,
+  confidence: number (0..1), risk: 'low'|'medium'|'high', payload: object, status: ProposalStatus,
+  autoPolicy: string|null,            // why it was auto-executed, if it was
+  decidedBy: string|null, decidedAt: string|null, decisionNote: string|null,
+  executionResult: object|null, createdAt
+}
+```
+
+Payload per kind:
+- `kyc_decision`: `{ submissionId, decision: 'approve'|'reject', reason? }` (`targetId` = submissionId)
+- `dispute_resolution`: `{ disputeId, resolution: 'refund_sender'|'pay_traveler'|'split', notes }` (`targetId` = disputeId)
+- `user_suspension`: `{ userId, suspended: boolean, reason }` (`targetId` = userId)
+- `outreach_draft`: `{ channel: 'whatsapp'|'email'|'other', audience, text }` (no execution; approving marks it ready to post)
+- `report`: `{ period, markdown }` (no execution; approving acknowledges it)
+
+### Auto-execution policy (server side, admin-configurable via env)
+- `dispute_resolution` executes immediately when the escrow amount is ≤ `OPS_AUTO_DISPUTE_MAX_MINOR` (default 5000 = $50), `confidence ≥ OPS_AUTO_MIN_CONFIDENCE` (default 0.9) and `risk = 'low'`.
+- `kyc_decision` with `decision = 'reject'` executes immediately when `confidence ≥ OPS_AUTO_MIN_CONFIDENCE` and `risk = 'low'` (the user can resubmit). Approvals always wait for an admin.
+- `user_suspension` always waits for an admin.
+- Set `OPS_AUTO_EXECUTE=false` to make everything wait for an admin.
+
+### Endpoints
+- `POST /ops/proposals` (ops|admin) body: `{ agent, kind, targetId?, title, reasoning, confidence, risk, payload }` -> 201 `{ proposal }`. 409 `CONFLICT` if a pending or executed proposal already exists for the same `kind` + `targetId`.
+- `GET /ops/proposals?status=pending|approved|rejected|auto_executed|failed|all&kind=&limit=` (ops|admin) -> `{ proposals }` (newest first)
+- `GET /ops/proposals/:id` (ops|admin) -> `{ proposal }`
+- `POST /ops/proposals/:id/decide` (admin) `{ decision: 'approve'|'reject', note? }` -> `{ proposal }`. Approving executes the action inside the API and stores `executionResult`; a failed execution sets status `failed` with the error in `executionResult`.
+- `GET /ops/stats` (ops|admin) -> `{ users: {total, verified, pendingKyc, suspended}, trips: {published, verified}, requests: {open, matched, inTransit, delivered, completed, disputed, cancelled}, matches: {byStatus: Record<MatchStatus, number>}, escrow: {heldMinor, releasedMinor, refundedMinor}, disputes: {open, resolved}, last7d: {newUsers, newRequests, newTrips, matchesProposed, matchesCompleted, disputesOpened, redactedMessages, codeFailures}, proposals: {pending, autoExecuted7d} }`
+- `GET /ops/context/match/:id` (ops|admin) -> `{ match, messages, disputes: Dispute[], sender: UserContext, traveler: UserContext }`
+- `GET /ops/context/user/:id` (ops|admin) -> `{ user: UserContext }` where `UserContext = { user: User, kyc: {status, docType, country, fullName, submittedAt}|null, counts: {trips, requests, matchesCompleted, matchesDisputed, disputesOpenedByUser, disputesLostByUser, redactedMessages30d, codeFailures30d}, recentAudit: AuditEntry[] }`
+
+Dev seed adds `ops@carrylink.dev` / `Ops-Passw0rd!` (role `ops`).

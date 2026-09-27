@@ -17,7 +17,7 @@ export function loadUser(req: FastifyRequest): AuthUser | null {
     id: row.id as string,
     email: row.email as string,
     name: row.name as string,
-    role: row.role as 'user' | 'admin',
+    role: row.role as AuthUser['role'],
     emailVerified: row.email_verified === 1,
     kycStatus: row.kyc_status as AuthUser['kycStatus'],
     suspended: row.suspended === 1,
@@ -42,6 +42,12 @@ export async function requireKyc(req: FastifyRequest, reply: FastifyReply): Prom
 export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   await requireAuth(req, reply);
   if (req.user!.role !== 'admin') throw errors.forbidden();
+}
+
+/** Admin or the AI operations service account: may read admin data and propose, never execute. */
+export async function requireStaff(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await requireAuth(req, reply);
+  if (req.user!.role !== 'admin' && req.user!.role !== 'ops') throw errors.forbidden();
 }
 
 export function assertUser(req: FastifyRequest): AuthUser {

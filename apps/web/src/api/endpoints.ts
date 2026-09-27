@@ -5,6 +5,7 @@ import type {
   AuthResponse,
   CategoryInfo,
   CreateMatchInput,
+  CreateProposalInput,
   CreateRequestInput,
   CreateTripInput,
   DeliveryRequest,
@@ -21,9 +22,14 @@ import type {
   LoginInput,
   Match,
   MatchCodes,
+  MatchContext,
   Message,
   OkResponse,
+  OpsStats,
   PayResponse,
+  Proposal,
+  ProposalDecisionInput,
+  ProposalListParams,
   RegisterInput,
   RegisterResponse,
   RequestSearchParams,
@@ -43,6 +49,7 @@ import type {
   UploadInput,
   UploadResponse,
   User,
+  UserContext,
   VerifyTripInput,
 } from './types';
 
@@ -160,3 +167,19 @@ export const adminSuspendUser = (id: string, input: SuspendInput) =>
   api.post<{ user: User }>(`/admin/users/${enc(id)}/suspend`, input).then((r) => r.user);
 export const adminGetAudit = (params: { limit?: number; before?: string } = {}) =>
   api.get<{ entries: AuditEntry[] }>('/admin/audit', { query: { ...params } }).then((r) => r.entries);
+
+// ---- AI operations team (/ops) ----
+type ProposalRes = { proposal: Proposal };
+const op = (id: string, suffix = '') => `/ops/proposals/${enc(id)}${suffix}`;
+
+export const opsCreateProposal = (input: CreateProposalInput) =>
+  api.post<ProposalRes>('/ops/proposals', input).then((r) => r.proposal);
+export const opsGetProposals = (params: ProposalListParams = {}) =>
+  api.get<{ proposals: Proposal[] }>('/ops/proposals', { query: { ...params } }).then((r) => r.proposals);
+export const opsGetProposal = (id: string) => api.get<ProposalRes>(op(id)).then((r) => r.proposal);
+export const opsDecideProposal = (id: string, input: ProposalDecisionInput) =>
+  api.post<ProposalRes>(op(id, '/decide'), input).then((r) => r.proposal);
+export const opsGetStats = () => api.get<OpsStats>('/ops/stats');
+export const opsGetMatchContext = (id: string) => api.get<MatchContext>(`/ops/context/match/${enc(id)}`);
+export const opsGetUserContext = (id: string) =>
+  api.get<{ user: UserContext }>(`/ops/context/user/${enc(id)}`).then((r) => r.user);
