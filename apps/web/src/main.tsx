@@ -11,7 +11,7 @@ if (!root) throw new Error('Root element #root not found');
 
 createRoot(root).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ToastProvider>
         <AuthProvider>
           <App />

@@ -15,8 +15,8 @@ export function Header() {
 
   const onLogout = async () => {
     await logout();
+    navigate('/', { replace: true });
     toast.info('You have been signed out.');
-    navigate('/');
   };
 
   const navCls = ({ isActive }: { isActive: boolean }) => (isActive ? 'nav-link active' : 'nav-link');

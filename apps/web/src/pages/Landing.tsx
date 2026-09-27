@@ -15,7 +15,7 @@ const VALUE_PROPS = [
   },
   {
     title: 'Escrow with codes',
-    body: 'Your payment is held in escrow. A handover code confirms pickup and a delivery code releases payment only when the recipient has the item.',
+    body: 'Your payment is held in escrow. A handover code confirms pickup, a delivery code confirms the recipient has the item, and the traveller is paid once you confirm or 48 hours pass without a dispute.',
   },
   {
     title: 'In-app chat',
@@ -26,7 +26,7 @@ const VALUE_PROPS = [
 const SENDER_STEPS = [
   { title: 'Post a request', body: 'Describe the item, declare its contents and value, set a reward and sign the safety attestations.' },
   { title: 'Match & pay into escrow', body: 'Ask a verified traveller on your route. Once they accept, pay — funds are held, not released.' },
-  { title: 'Share the codes', body: 'Give the handover code at pickup and the delivery code to your recipient. Payment releases on delivery.' },
+  { title: 'Share the codes', body: 'Give the handover code at pickup and the delivery code to your recipient. Confirm, and the traveller is paid; you have 48 hours to raise a dispute.' },
 ];
 
 const TRAVELLER_STEPS = [
@@ -48,7 +48,7 @@ export function LandingPage() {
           <h1>Send things with people already making the trip.</h1>
           <p className="lead">
             CarryLink connects senders with identity-verified travellers. Items are inspected at handover, payment is
-            held in escrow, and release happens only with the recipient's delivery code.
+            held in escrow, and released only after the recipient's delivery code and a 48-hour dispute window.
           </p>
           <div className="hero-actions">
             {user ? (

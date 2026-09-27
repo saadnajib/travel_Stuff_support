@@ -5,7 +5,8 @@ import type { MatchStatus, Message } from '../../api/types';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, formatTime } from '../../lib/format';
 
-const CHAT_OPEN: MatchStatus[] = ['accepted', 'funded', 'in_transit', 'delivered'];
+// Mirrors the API: chat stays open during a dispute so both parties can share evidence.
+const CHAT_OPEN: MatchStatus[] = ['accepted', 'funded', 'in_transit', 'delivered', 'disputed'];
 const POLL_MS = 5000;
 
 interface Props {

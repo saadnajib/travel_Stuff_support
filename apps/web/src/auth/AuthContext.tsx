@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { onSessionChange, refreshSession, setAccessToken, setUnauthorizedHandler } from '../api/client';
 import * as endpoints from '../api/endpoints';
 import type { User } from '../api/types';
@@ -7,6 +7,8 @@ import type { User } from '../api/types';
 export interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  /** True after an explicit sign-out (guards send the user home instead of to /login). */
+  signedOut: boolean;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | null>;
@@ -24,7 +26,14 @@ function restoreOnce(): Promise<User | null> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signedOut, setSignedOut] = useState(false);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  // The signed-out flag only needs to survive until we've landed on the home page.
+  useEffect(() => {
+    if (signedOut && pathname === '/') setSignedOut(false);
+  }, [signedOut, pathname]);
 
   // Silent session restore from the refresh cookie.
   useEffect(() => {
@@ -53,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await endpoints.login({ email, password });
+    setSignedOut(false);
     setUser(res.user);
     return res.user;
   }, []);
@@ -64,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Even if the server call fails, drop local state.
     } finally {
       setAccessToken(null);
+      setSignedOut(true);
       setUser(null);
     }
   }, []);
@@ -79,8 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading, login, logout, refreshUser }),
-    [user, loading, login, logout, refreshUser],
+    () => ({ user, loading, signedOut, login, logout, refreshUser }),
+    [user, loading, signedOut, login, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -4,10 +4,11 @@ import { Loading } from '../components/Loading';
 import { useAuth } from './AuthContext';
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOut } = useAuth();
   const location = useLocation();
   if (loading) return <Loading label="Restoring your session…" />;
   if (!user) {
+    if (signedOut) return <Navigate to="/" replace />;
     const next = location.pathname + location.search;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
@@ -15,10 +16,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 export function RequireAdmin({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOut } = useAuth();
   const location = useLocation();
   if (loading) return <Loading label="Restoring your session…" />;
   if (!user) {
+    if (signedOut) return <Navigate to="/" replace />;
     const next = location.pathname + location.search;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
