@@ -1,4 +1,3 @@
-process.env.NODE_ENV = 'test';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { Db } from '../src/db.js';

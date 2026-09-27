@@ -1,4 +1,3 @@
-process.env.NODE_ENV = 'test';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { computeFees, findProhibited } from '../src/domain/categories.js';
